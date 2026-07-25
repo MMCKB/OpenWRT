@@ -92,6 +92,13 @@ jobs:
         echo "硬盘数量：$disk_count"
         df -hT
 
+    - name: Free Disk Space (GitHub Runner)
+      run: |
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/share/swift
+        sudo apt clean
+        sudo docker system prune -af || true
+        df -h /
+
     - name: Initialization Environment(初始化环境)
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -102,7 +109,8 @@ jobs:
           git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
           libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
           genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
-          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev \
+          u-boot-tools
         sudo -E systemctl daemon-reload
         sudo timedatectl set-timezone "$TZ"
 
@@ -199,22 +207,48 @@ jobs:
         make defconfig
         make download -j"$(nproc)"
 
-    - name: Compile Firmware(开始编译固件)
-      id: compile
+    # ========== 修改的编译部分开始 ==========
+    - name: Clean Previous Kernel Build (Avoid Cache Conflict)
       run: |
         cd "$OPENWRT_PATH"
-        echo -e "$(nproc) thread compile"
-        make -j"$(nproc)" || make -j1 || make -j1 V=s
+        # 仅清理内核和镜像目录，避免全量清理浪费时间
+        make target/linux/clean || true
+        rm -rf build_dir/target-*/linux-*/.built* build_dir/target-*/linux-*/.configured* build_dir/target-*/linux-*/.stamp*
+
+    - name: Compile Kernel (with Verbose and Check)
+      id: compile_kernel
+      run: |
+        cd "$OPENWRT_PATH"
+        echo "Starting kernel compile with $(nproc) threads..."
+        make -j$(nproc) target/linux/compile V=s || make -j1 target/linux/compile V=s
+        # 检查关键产物
+        echo "======== Kernel artifacts ========"
+        find build_dir/ -name "*uImage*" -o -name "*itb*" | head -20
+        if [ ! -f "build_dir/target-aarch64_cortex-a53_musl/linux-qualcommax_ipq60xx/jdcloud_re-ss-01-uImage.itb" ]; then
+          echo "ERROR: uImage.itb not found!" >&2
+          exit 1
+        fi
+        echo "status=kernel_ok" >> "$GITHUB_OUTPUT"
+
+    - name: Compile Image and Packages (with Verbose)
+      if: steps.compile_kernel.outputs.status == 'kernel_ok'
+      run: |
+        cd "$OPENWRT_PATH"
+        # 先构建镜像（依赖内核）
+        make -j$(nproc) target/linux/install V=s || make -j1 target/linux/install V=s
+        # 再构建所有包（若上面未完全构建）
+        make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> "$GITHUB_OUTPUT"
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> "$GITHUB_ENV"
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> "$GITHUB_ENV"
+    # ========== 修改结束 ==========
 
     - name: Check Space Usage(检查空间使用情况)
       if: (!cancelled())
       run: df -hT
 
     - name: Organize Files(整理文件)
-      if: steps.compile.outputs.status == 'success'
+      if: steps.compile_kernel.outputs.status == 'success'   # 注意这里判断条件改为 compile_kernel 的 status
       env:
         ARTIFACT_PREFIX: ${{ inputs.artifact_prefix }}
         MANIFEST_FILE: ${{ inputs.manifest_file }}
@@ -252,7 +286,7 @@ jobs:
         echo "FIRMWARE_PATH=$PWD" >> "$GITHUB_ENV"
 
     - name: Upload Firmware To Release(发布固件)
-      if: steps.compile.outputs.status == 'success'
+      if: steps.compile_kernel.outputs.status == 'success'
       uses: ncipollo/release-action@v1
       with:
         name: ${{ inputs.firmware_tag }}
@@ -275,7 +309,7 @@ jobs:
           - ${{ env.VERSION_INFO }}
 
     - name: Delete Old Cache(删除旧缓存)
-      if: steps.compile.outputs.status == 'success'
+      if: steps.compile_kernel.outputs.status == 'success'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
