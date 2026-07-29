@@ -251,6 +251,34 @@ jobs:
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
         echo "FIRMWARE_PATH=$PWD" >> "$GITHUB_ENV"
 
+    - name: Package Kmods(打包内核模块)
+      if: steps.compile.outputs.status == 'success'
+      env:
+        ARTIFACT_PREFIX: ${{ inputs.artifact_prefix }}
+      run: |
+        KMODS_DIR="$FIRMWARE_PATH/kmods"
+        mkdir -p "$KMODS_DIR"
+        # 从 packages 和 targets 目录收集所有 kmod 包
+        find "$OPENWRT_PATH/bin/packages" "$OPENWRT_PATH/bin/targets" \
+          -type f -name "kmod-*.apk" -exec cp -f {} "$KMODS_DIR/" \;
+        kmod_count=$(find "$KMODS_DIR" -type f -name "kmod-*.apk" | wc -l)
+        echo "收集到 $kmod_count 个 kmod 包"
+        if [ "$kmod_count" -gt 0 ]; then
+          # 生成 apk 仓库索引（生成失败也不影响手动安装）
+          APK_BIN="$(command -v apk 2>/dev/null || find "$OPENWRT_PATH/staging_dir" -path "*/bin/apk" -type f 2>/dev/null | head -1)"
+          if [ -n "$APK_BIN" ]; then
+            ( cd "$KMODS_DIR" && "$APK_BIN" index -o APKINDEX.tar.gz kmod-*.apk ) \
+              || echo "提示: apk index 生成失败，仅打包 apk 文件"
+          else
+            echo "提示: 未找到 apk 工具，跳过索引生成"
+          fi
+          tar -zcf "$FIRMWARE_PATH/$ARTIFACT_PREFIX-kmods.tar.gz" -C "$KMODS_DIR" .
+          rm -rf "$KMODS_DIR"
+          echo "已生成: $ARTIFACT_PREFIX-kmods.tar.gz"
+        else
+          echo "警告: 未找到任何 kmod 包" >&2
+        fi
+
     - name: Upload Firmware To Release(发布固件)
       if: steps.compile.outputs.status == 'success'
       uses: ncipollo/release-action@v1
