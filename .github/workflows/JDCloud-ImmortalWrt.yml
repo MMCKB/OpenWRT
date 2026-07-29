@@ -27,3 +27,12 @@ jobs:
       delete_old_workflows: true
       release_summary: >-
         这是开启全功能NSS的6.12内核固件，默认主题为Aurora；该固件在ImmortalWrt的基础上，添加了额外的软件包，具体详见JDCloud.config和General.config。
+      kmods_release_tag: Packages
+      kmods_release_body: |
+        **京东云（亚瑟 / 雅典娜）ImmortalWrt 内核模块包**
+
+        这里是与 JDCloud 固件同源编译的全部 kmod 软件包，内核版本完全匹配，可直接安装。
+        - 对应固件：JDCloud Release 下的 `*.bin`
+        - 对应内核：6.12（NSS 全功能）
+        - 架构：aarch64_cortex-a53
+        - 源码：laipeng668/immortalwrt (openwrt-25.12)

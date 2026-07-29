@@ -43,6 +43,16 @@ on:
         required: false
         type: string
         default: apk
+      kmods_release_tag:
+        description: kmod 发布到的 Release Tag（留空则不发布 kmod）
+        required: false
+        type: string
+        default: ''
+      kmods_release_body:
+        description: kmod Release 的自定义说明文字
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -213,6 +223,27 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
+    - name: Collect Kmods(收集内核模块)
+      if: steps.compile.outputs.status == 'success' && inputs.kmods_release_tag != ''
+      env:
+        ARTIFACT_PREFIX: ${{ inputs.artifact_prefix }}
+        PACKAGE_EXTENSION: ${{ inputs.package_extension }}
+      run: |
+        KMODS_DIR="$GITHUB_WORKSPACE/kmods"
+        rm -rf "$KMODS_DIR"
+        mkdir -p "$KMODS_DIR"
+        # 必须在 Organize Files 之前用 cp 收集，否则 mv 后文件就不在了
+        while IFS= read -r -d '' pkg; do
+          filename="$(basename "$pkg")"
+          cp -f "$pkg" "$KMODS_DIR/${ARTIFACT_PREFIX}-${filename}"
+        done < <(find "$OPENWRT_PATH/bin/packages" "$OPENWRT_PATH/bin/targets" -type f -name "kmod-*.${PACKAGE_EXTENSION}" -print0)
+        kmod_count=$(find "$KMODS_DIR" -type f | wc -l)
+        echo "收集到 $kmod_count 个 kmod 包"
+        if [ "$kmod_count" -eq 0 ]; then
+          echo "警告: 未找到任何 kmod 包" >&2
+        fi
+        echo "KMODS_DIR=$KMODS_DIR" >> "$GITHUB_ENV"
+
     - name: Organize Files(整理文件)
       if: steps.compile.outputs.status == 'success'
       env:
@@ -251,34 +282,6 @@ jobs:
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
         echo "FIRMWARE_PATH=$PWD" >> "$GITHUB_ENV"
 
-    - name: Package Kmods(打包内核模块)
-      if: steps.compile.outputs.status == 'success'
-      env:
-        ARTIFACT_PREFIX: ${{ inputs.artifact_prefix }}
-      run: |
-        KMODS_DIR="$FIRMWARE_PATH/kmods"
-        mkdir -p "$KMODS_DIR"
-        # 从 packages 和 targets 目录收集所有 kmod 包
-        find "$OPENWRT_PATH/bin/packages" "$OPENWRT_PATH/bin/targets" \
-          -type f -name "kmod-*.apk" -exec cp -f {} "$KMODS_DIR/" \;
-        kmod_count=$(find "$KMODS_DIR" -type f -name "kmod-*.apk" | wc -l)
-        echo "收集到 $kmod_count 个 kmod 包"
-        if [ "$kmod_count" -gt 0 ]; then
-          # 生成 apk 仓库索引（生成失败也不影响手动安装）
-          APK_BIN="$(command -v apk 2>/dev/null || find "$OPENWRT_PATH/staging_dir" -path "*/bin/apk" -type f 2>/dev/null | head -1)"
-          if [ -n "$APK_BIN" ]; then
-            ( cd "$KMODS_DIR" && "$APK_BIN" index -o APKINDEX.tar.gz kmod-*.apk ) \
-              || echo "提示: apk index 生成失败，仅打包 apk 文件"
-          else
-            echo "提示: 未找到 apk 工具，跳过索引生成"
-          fi
-          tar -zcf "$FIRMWARE_PATH/$ARTIFACT_PREFIX-kmods.tar.gz" -C "$KMODS_DIR" .
-          rm -rf "$KMODS_DIR"
-          echo "已生成: $ARTIFACT_PREFIX-kmods.tar.gz"
-        else
-          echo "警告: 未找到任何 kmod 包" >&2
-        fi
-
     - name: Upload Firmware To Release(发布固件)
       if: steps.compile.outputs.status == 'success'
       uses: ncipollo/release-action@v1
@@ -301,6 +304,26 @@ jobs:
           - 固件内核版本：**${{ env.VERSION_KERNEL }}**
           - 固件编译前最后一次➦[主源码](${{ inputs.repo_url }})更新记录
           - ${{ env.VERSION_INFO }}
+
+    - name: Upload Kmods To Packages Release(发布内核模块)
+      if: steps.compile.outputs.status == 'success' && inputs.kmods_release_tag != ''
+      uses: ncipollo/release-action@v1
+      with:
+        name: ${{ inputs.kmods_release_tag }}
+        allowUpdates: true
+        tag: ${{ inputs.kmods_release_tag }}
+        token: ${{ github.token }}
+        artifacts: ${{ env.KMODS_DIR }}/*
+        artifactErrorsFailBuild: false
+        replacesArtifacts: false
+        body: |
+          ${{ inputs.kmods_release_body }}
+          ---
+          ### 📦 构建信息
+          - 设备前缀：${{ inputs.artifact_prefix }}
+          - 内核版本：${{ env.VERSION_KERNEL }}
+          - 更新时间：${{ env.DATE }}
+          - 安装方法：下载对应前缀的 `*.apk` 到路由器，执行 `apk add --allow-untrusted <文件名>` 安装
 
     - name: Delete Old Cache(删除旧缓存)
       if: steps.compile.outputs.status == 'success'

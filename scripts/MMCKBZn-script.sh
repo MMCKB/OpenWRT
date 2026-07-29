@@ -106,6 +106,12 @@ echo "baidu.com"  > package/luci-app-passwall/luci-app-passwall/root/usr/share/p
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
 
+# 集成 iStore 软件中心
+echo >> feeds.conf.default
+echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+./scripts/feeds update istore
+./scripts/feeds install -d y -p istore luci-app-store
+
 # 拉取 nss-status.sh 并执行
 NSS_URL="https://raw.githubusercontent.com/MMCKBZn/OpenWRT/master/scripts/nss-status.sh"
 wget -qO /tmp/nss-status.sh "$NSS_URL" && bash /tmp/nss-status.sh
