@@ -325,6 +325,11 @@ jobs:
           - 更新时间：${{ env.DATE }}
           - 安装方法：下载对应前缀的 `*.apk` 到路由器，执行 `apk add --allow-untrusted <文件名>` 安装
 
+          ### ⚠️ 关于 kmod 不全的说明
+          这里的 kmod 包是本次固件编译时选中的内核模块，并非全部 kmod。
+          官方源（immortalwrt buildbot）会编译所有 kmod，但本地编译只产出 `.config` 中标记为 `=y`（编入固件）或 `=m`（独立模块）的 kmod。
+          如果需要的 kmod 不在这里，请在 `configs/General.config` 或 `configs/JDCloud.config` 中添加 `CONFIG_PACKAGE_kmod-xxx=m`，重新编译即可。
+
     - name: Delete Old Cache(删除旧缓存)
       if: steps.compile.outputs.status == 'success'
       env:
