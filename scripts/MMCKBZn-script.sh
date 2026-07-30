@@ -106,11 +106,13 @@ echo "baidu.com"  > package/luci-app-passwall/luci-app-passwall/root/usr/share/p
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
 
-# 集成 iStore 软件中心
-echo >> feeds.conf.default
-echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
-./scripts/feeds update istore
-./scripts/feeds install -d y -p istore luci-app-store
+# 集成 iStore 软件中心（直接 clone 到 package/ 目录，不走 feeds，避免生成无效的 feed 仓库地址）
+git clone --depth=1 -b main https://github.com/linkease/istore.git /tmp/istore
+cp -r /tmp/istore/luci/luci-app-store package/luci-app-store
+cp -r /tmp/istore/luci/luci-lib-taskd package/luci-lib-taskd
+cp -r /tmp/istore/luci/luci-lib-xterm package/luci-lib-xterm
+cp -r /tmp/istore/luci/taskd package/taskd
+rm -rf /tmp/istore
 
 # 拉取 nss-status.sh 并执行
 NSS_URL="https://raw.githubusercontent.com/MMCKBZn/OpenWRT/master/scripts/nss-status.sh"
