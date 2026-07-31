@@ -64,7 +64,7 @@ defaults:
 
 env:
   GENERAL_CONFIG_FILE: configs/General.config
-  DISABLE_WIFI_CONFIG_FILE: configs/Disable-Wifi.config
+  PACKAGES_KMODS_CONFIG_FILE: configs/Packages-Kmods.config
   DIY_SCRIPT: scripts/MMCKBZn-script.sh
   TZ: Asia/Shanghai
 
@@ -202,7 +202,7 @@ jobs:
       env:
         CONFIG_FILE: ${{ inputs.config_file }}
       run: |
-        cat "$GITHUB_WORKSPACE/$CONFIG_FILE" "$GITHUB_WORKSPACE/$GENERAL_CONFIG_FILE" "$GITHUB_WORKSPACE/$DISABLE_WIFI_CONFIG_FILE" > "$OPENWRT_PATH/.config"
+        cat "$GITHUB_WORKSPACE/$CONFIG_FILE" "$GITHUB_WORKSPACE/$GENERAL_CONFIG_FILE" "$GITHUB_WORKSPACE/$PACKAGES_KMODS_CONFIG_FILE" > "$OPENWRT_PATH/.config"
         cd "$OPENWRT_PATH"
         if [ "${{ inputs.remove_sqm_scripts_nss }}" = "true" ]; then
           sed -i '/CONFIG_PACKAGE_sqm-scripts-nss=y/d' .config
