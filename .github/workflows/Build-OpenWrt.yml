@@ -208,6 +208,18 @@ jobs:
           sed -i '/CONFIG_PACKAGE_sqm-scripts-nss=y/d' .config
         fi
         make defconfig
+        # CONFIG_ALL_KMODS=y 在 make defconfig 时会强制启用全部 kmod（=m），覆盖 Disable-Wifi.config 里的 "is not set"。
+        # 因此在 defconfig 之后，按 Disable-Wifi.config 的禁用清单，从 .config 中删除对应 kmod 的 =y/=m 行，
+        # 既保留 ALL_KMODS 编译其他 kmod 到 Packages Release 的能力，又精确排除被禁用的无线驱动（避免 aic8800 等编译失败）。
+        # make 编译按当前 .config 执行，不会再自动 defconfig 把它们加回来。
+        disabled_count=0
+        while IFS= read -r _pkg; do
+          [ -n "$_pkg" ] || continue
+          sed -i -E "/^CONFIG_PACKAGE_${_pkg}=/d" .config
+          disabled_count=$((disabled_count + 1))
+        done < <(grep -oE '^# CONFIG_PACKAGE_(kmod-[a-z0-9_-]+) is not set' "$GITHUB_WORKSPACE/$DISABLE_WIFI_CONFIG_FILE" | sed -E 's/^# CONFIG_PACKAGE_(kmod-[a-z0-9_-]+) is not set/\1/')
+        echo "已在 defconfig 后强制禁用 $disabled_count 个 kmod（来自 $DISABLE_WIFI_CONFIG_FILE）"
+        grep -E '^CONFIG_PACKAGE_kmod-aic8800=' .config && echo "警告: kmod-aic8800 仍存在" || echo "已确认 kmod-aic8800 不在编译列表"
         make download -j"$(nproc)"
 
     - name: Compile Firmware(开始编译固件)
