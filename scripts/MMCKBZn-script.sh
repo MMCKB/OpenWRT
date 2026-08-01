@@ -103,16 +103,50 @@ git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-open
 # 清理 PassWall 的 chnlist 规则文件
 echo "baidu.com"  > package/luci-app-passwall/luci-app-passwall/root/usr/share/passwall/rules/chnlist
 
-# 集成 iStore 软件中心（官方推荐方式：https://github.com/linkease/istore）
-# 先单独 update 并 install luci-app-store（官方方法），再由后续 feeds install -a 把
-# istore feed 中其余依赖包（luci-lib-taskd / luci-lib-xterm / taskd）一并安装到位
-echo >> feeds.conf.default
-echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
-./scripts/feeds update istore
-./scripts/feeds install -d y -p istore luci-app-store
-
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
+
+# iStore 软件中心：编译期不集成，改为首次开机联网后用官方 .run 脚本在线安装
+# 用 uci-defaults 机制：脚本在首次开机时执行，成功(exit 0)后由系统自动删除，以后开机不再执行
+# 实际安装放后台进行，不阻塞开机；.run 文件用完即删
+cat > package/base-files/files/etc/uci-defaults/zz-install-istore <<'ISTORE_EOF'
+#!/bin/sh
+# 首次开机后台安装 iStore 软件中心
+# uci-defaults 机制：exit 0 后本脚本自动删除，以后开机不再执行
+# 实际安装在后台进行，不阻塞开机；日志在 /tmp/istore-install.log
+(
+  LOG=/tmp/istore-install.log
+  echo "$(date): 开始安装 iStore" > "$LOG"
+
+  # 等待网络就绪（最多 300 秒）
+  for i in $(seq 1 300); do
+    ping -c 1 -W 1 223.5.5.5 >/dev/null 2>&1 && break
+    sleep 1
+  done
+
+  if ! ping -c 1 -W 2 223.5.5.5 >/dev/null 2>&1; then
+    echo "$(date): 网络不可用，退出" >> "$LOG"
+    exit 1
+  fi
+  echo "$(date): 网络已就绪" >> "$LOG"
+
+  # 下载并执行官方 .run 安装脚本（来自 linkease/openwrt-app-actions 官方仓库）
+  cd /tmp
+  if curl -L -o istore-reinstall.run https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run >> "$LOG" 2>&1; then
+    chmod 755 istore-reinstall.run
+    ./istore-reinstall.run >> "$LOG" 2>&1
+    echo "$(date): 安装流程结束" >> "$LOG"
+  else
+    echo "$(date): 下载 .run 失败" >> "$LOG"
+  fi
+
+  # 清理 .run 文件
+  rm -f /tmp/istore-reinstall.run
+) &
+
+exit 0
+ISTORE_EOF
+chmod 755 package/base-files/files/etc/uci-defaults/zz-install-istore
 
 # 拉取 nss-status.sh 并执行
 NSS_URL="https://raw.githubusercontent.com/MMCKBZn/OpenWRT/master/scripts/nss-status.sh"
