@@ -103,16 +103,17 @@ git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-open
 # 清理 PassWall 的 chnlist 规则文件
 echo "baidu.com"  > package/luci-app-passwall/luci-app-passwall/root/usr/share/passwall/rules/chnlist
 
+# 集成 iStore 软件中心（必须在 feeds update/install -a 之前添加 feed）
+# istore feed 含 4 个互相依赖的包：luci-app-store / luci-lib-taskd / luci-lib-xterm / taskd
+# feeds install <pkg> 不会自动安装依赖包，单独 install luci-app-store 会导致
+# luci-lib-taskd / luci-lib-xterm / taskd 不在 package/feeds/istore/ 下，
+# make defconfig 找不到依赖就会把 luci-app-store 设为 not set
+# 所以必须在 feeds install -a 之前把 istore 写入 feeds.conf.default，
+# 让全局 install -a 一次性安装全部包（luci.mk 也要求 feeds 方式安装）
+echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
-
-# 集成 iStore 软件中心（直接 clone 到 package/ 目录，不走 feeds，避免生成无效的 feed 仓库地址）
-git clone --depth=1 -b main https://github.com/linkease/istore.git /tmp/istore
-cp -r /tmp/istore/luci/luci-app-store package/luci-app-store
-cp -r /tmp/istore/luci/luci-lib-taskd package/luci-lib-taskd
-cp -r /tmp/istore/luci/luci-lib-xterm package/luci-lib-xterm
-cp -r /tmp/istore/luci/taskd package/taskd
-rm -rf /tmp/istore
 
 # 拉取 nss-status.sh 并执行
 NSS_URL="https://raw.githubusercontent.com/MMCKBZn/OpenWRT/master/scripts/nss-status.sh"
