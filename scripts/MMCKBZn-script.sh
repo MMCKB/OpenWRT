@@ -106,14 +106,21 @@ echo "baidu.com"  > package/luci-app-passwall/luci-app-passwall/root/usr/share/p
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
 
-# iStore 软件中心：编译期不集成，改为首次开机联网后用官方 .run 脚本在线安装
-# 用 uci-defaults 机制：脚本在首次开机时执行，成功(exit 0)后由系统自动删除，以后开机不再执行
-# 实际安装放后台进行，不阻塞开机；.run 文件用完即删
+# iStore 软件中心：编译期下载官方 .run 安装脚本并打包进固件，
+# 首次开机时本地执行 .run（.run 内部会从 istore 软件源下载 iStore 包并安装）
+# 用 uci-defaults 机制：脚本 exit 0 后由系统自动删除，以后开机不再执行
+# .run 文件用完即删；安装放后台进行，不阻塞开机；日志在 /tmp/istore-install.log
+ISTORE_RUN_URL="https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run"
+mkdir -p package/base-files/files/usr/share/istore
+wget -qO package/base-files/files/usr/share/istore/istore-reinstall.run "$ISTORE_RUN_URL"
+chmod 755 package/base-files/files/usr/share/istore/istore-reinstall.run
+
 cat > package/base-files/files/etc/uci-defaults/zz-install-istore <<'ISTORE_EOF'
 #!/bin/sh
 # 首次开机后台安装 iStore 软件中心
 # uci-defaults 机制：exit 0 后本脚本自动删除，以后开机不再执行
-# 实际安装在后台进行，不阻塞开机；日志在 /tmp/istore-install.log
+# .run 已打包在固件内(/usr/share/istore/)，无需联网下载 .run 本身
+# .run 内部会从 istore.istoreos.com 软件源下载 iStore 包，需等待网络就绪
 (
   LOG=/tmp/istore-install.log
   echo "$(date): 开始安装 iStore" > "$LOG"
@@ -125,23 +132,21 @@ cat > package/base-files/files/etc/uci-defaults/zz-install-istore <<'ISTORE_EOF'
   done
 
   if ! ping -c 1 -W 2 223.5.5.5 >/dev/null 2>&1; then
-    echo "$(date): 网络不可用，退出" >> "$LOG"
+    echo "$(date): 网络不可用，稍后可手动执行 /usr/share/istore/istore-reinstall.run" >> "$LOG"
     exit 1
   fi
   echo "$(date): 网络已就绪" >> "$LOG"
 
-  # 下载并执行官方 .run 安装脚本（来自 linkease/openwrt-app-actions 官方仓库）
+  # 执行已打包在固件内的 .run 安装脚本
   cd /tmp
-  if curl -L -o istore-reinstall.run https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run >> "$LOG" 2>&1; then
-    chmod 755 istore-reinstall.run
-    ./istore-reinstall.run >> "$LOG" 2>&1
+  if /usr/share/istore/istore-reinstall.run >> "$LOG" 2>&1; then
     echo "$(date): 安装流程结束" >> "$LOG"
+    # 安装成功后删除 .run 文件释放空间
+    rm -f /usr/share/istore/istore-reinstall.run
+    rmdir /usr/share/istore 2>/dev/null
   else
-    echo "$(date): 下载 .run 失败" >> "$LOG"
+    echo "$(date): 安装失败，可稍后手动执行 /usr/share/istore/istore-reinstall.run 重试" >> "$LOG"
   fi
-
-  # 清理 .run 文件
-  rm -f /tmp/istore-reinstall.run
 ) &
 
 exit 0
