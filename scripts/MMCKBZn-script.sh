@@ -14,7 +14,7 @@ sed -i "s#_('Firmware Version'), (L\.isObject(boardinfo\.release) ? boardinfo\.r
                 ? boardinfo.release.description + ' / '\n \
                 : '') + (luciversion || '') + ' / ',\n \
             E('a', {\n \
-                href: 'https://github.com/MMCKBZn/OpenWRT/release',\n \
+                href: 'https://github.com/MMCKB/OpenWRT/release',\n \
                 target: '_blank',\n \
                 rel: 'noopener noreferrer'\n \
                 }, [ 'Built by MMCKB $(date "+%Y-%m-%d %H:%M:%S")' ])\n \
